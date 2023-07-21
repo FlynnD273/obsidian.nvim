@@ -403,7 +403,7 @@ note.save = function(self, path, insert_frontmatter)
     self_f:close()
   elseif #self.aliases > 0 then
     -- Add a header.
-    table.insert(lines, "# " .. self.aliases[1])
+    -- table.insert(lines, "# " .. self.aliases[1])
   end
 
   -- Replace frontmatter.

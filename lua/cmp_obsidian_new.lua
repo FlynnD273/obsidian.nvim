@@ -25,10 +25,10 @@ source.complete = function(self, request, callback)
     local items = {}
     table.insert(items, {
       sortText = "[[" .. search,
-      label = "Create: [[" .. new_id .. "|" .. search .. "]]",
+      label = "Create: [[" .. new_id .. "]]",
       kind = 18,
       textEdit = {
-        newText = "[[" .. new_id .. "|" .. search .. "]]",
+        newText = "[[" .. new_id .. "]]",
         range = {
           start = {
             line = request.context.cursor.row - 1,
