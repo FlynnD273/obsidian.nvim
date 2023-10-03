@@ -144,8 +144,13 @@ command.open = function(client, data)
   local cmd = nil
   local args = {}
   local sysname = vim.loop.os_uname().sysname
+  local release = vim.loop.os_uname().release
   if sysname == "Linux" then
-    cmd = "xdg-open"
+    if string.find(release, "microsoft") then
+      cmd = "wsl-open"
+    else
+      cmd = "xdg-open"
+    end
     args = { uri }
   elseif sysname == "Darwin" then
     cmd = "open"
@@ -268,12 +273,10 @@ end
 ---@param client obsidian.Client
 ---@param data table
 command.template = function(client, data)
-  if not client.opts.templates.subdir then
-    echo.err("No templates folder defined in setup()", client.opts.log_level)
+  if client.templates_dir == nil then
+    echo.err("Templates folder is not defined or does not exist", client.opts.log_level)
     return
   end
-
-  local templates_dir = client.templates_dir
 
   -- We need to get this upfront before
   -- Telescope hijacks the current window
@@ -285,7 +288,7 @@ command.template = function(client, data)
 
   if string.len(data.args) > 0 then
     local template_name = data.args
-    local path = Path:new(templates_dir) / template_name
+    local path = Path:new(client.templates_dir) / template_name
     if path:is_file() then
       insert_template(data.args)
     else
@@ -303,7 +306,7 @@ command.template = function(client, data)
       end
       local choose_template = function()
         local opts = {
-          cwd = tostring(templates_dir),
+          cwd = tostring(client.templates_dir),
           attach_mappings = function(_, map)
             map({ "i", "n" }, "<CR>", function(prompt_bufnr)
               local template = require("telescope.actions.state").get_selected_entry()
@@ -312,6 +315,7 @@ command.template = function(client, data)
             end)
             return true
           end,
+          find_command = util.build_find_cmd(".", client.opts.sort_by, client.opts.sort_reversed),
         }
         require("telescope.builtin").find_files(opts)
       end
@@ -323,11 +327,10 @@ command.template = function(client, data)
       if not has_fzf_lua then
         util.implementation_unavailable()
       end
-      local cmd = vim.tbl_flatten { util.FIND_CMD, { ".", "-name", "'*.md'" } }
-      cmd = util.table_params_to_str(cmd)
+      local cmd = util.build_find_cmd(".", client.opts.sort_by, client.opts.sort_reversed)
       fzf_lua.files {
-        cmd = cmd,
-        cwd = tostring(templates_dir),
+        cmd = util.table_params_to_str(cmd),
+        cwd = tostring(client.templates_dir),
         file_icons = false,
         actions = {
           ["default"] = function(entry)
@@ -351,9 +354,8 @@ command.template = function(client, data)
           vim.api.nvim_del_user_command "ApplyTemplate"
         end, { nargs = 1, bang = true })
 
-        local base_cmd = vim.tbl_flatten { util.FIND_CMD, { tostring(templates_dir), "-name", "'*.md'" } }
-        base_cmd = util.table_params_to_str(base_cmd)
-        local fzf_options = { source = base_cmd, sink = "ApplyTemplate" }
+        local cmd = util.build_find_cmd(tostring(client.templates_dir), client.opts.sort_by, client.opts.sort_reversed)
+        local fzf_options = { source = util.table_params_to_str(cmd), sink = "ApplyTemplate" }
         vim.api.nvim_call_function("fzf#run", {
           vim.api.nvim_call_function("fzf#wrap", { fzf_options }),
         })
@@ -368,8 +370,8 @@ end
 ---Quick switch to an obsidian note
 ---
 ---@param client obsidian.Client
----@param data table
-command.quick_switch = function(client, data)
+---@param _ table
+command.quick_switch = function(client, _)
   local dir = tostring(client.dir)
 
   client:_run_with_finder_backend(":ObsidianQuickSwitch", {
@@ -380,7 +382,11 @@ command.quick_switch = function(client, data)
         util.implementation_unavailable()
       end
       -- Search with telescope.nvim
-      telescope.find_files { cwd = dir, search_file = "*.md" }
+      telescope.find_files {
+        cwd = dir,
+        search_file = "*.md",
+        find_command = util.build_find_cmd(".", client.opts.sort_by, client.opts.sort_reversed),
+      }
     end,
     ["fzf-lua"] = function()
       local has_fzf_lua, fzf_lua = pcall(require, "fzf-lua")
@@ -388,16 +394,14 @@ command.quick_switch = function(client, data)
       if not has_fzf_lua then
         util.implementation_unavailable()
       end
-      local cmd = vim.tbl_flatten { util.FIND_CMD, { ".", "-name", "'*.md'" } }
-      cmd = util.table_params_to_str(cmd)
-      fzf_lua.files { cmd = cmd, cwd = tostring(client.dir) }
+      local cmd = util.build_find_cmd(".", client.opts.sort_by, client.opts.sort_reversed)
+      fzf_lua.files { cmd = util.table_params_to_str(cmd), cwd = tostring(client.dir) }
     end,
     ["fzf.vim"] = function()
       -- Fall back to trying with fzf.vim
       local has_fzf, _ = pcall(function()
-        local base_cmd = vim.tbl_flatten { util.FIND_CMD, { dir, "-name", "'*.md'" } }
-        base_cmd = util.table_params_to_str(base_cmd)
-        local fzf_options = { source = base_cmd, sink = "e" }
+        local cmd = util.build_find_cmd(dir, client.opts.sort_by, client.opts.sort_reversed)
+        local fzf_options = { source = util.table_params_to_str(cmd), sink = "e" }
         vim.api.nvim_call_function("fzf#run", {
           vim.api.nvim_call_function("fzf#wrap", { fzf_options }),
         })
@@ -570,8 +574,8 @@ command.follow = function(client, _)
     return
   end
 
-  -- Remove header link from the end if there is one.
-  local header_link = note_file_name:match "#[%a%d-_]+$"
+  -- Remove links from the end if there are any.
+  local header_link = note_file_name:match "#[%a%d%s-_^]+$"
   if header_link ~= nil then
     note_file_name = note_file_name:sub(1, -header_link:len() - 1)
   end

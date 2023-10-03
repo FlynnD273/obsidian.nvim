@@ -1,3 +1,5 @@
+local echo = require "obsidian.echo"
+
 local config = {}
 
 ---[[ Options specs ]]---
@@ -6,10 +8,7 @@ local config = {}
 ---@field dir string
 ---@field log_level integer|?
 ---@field notes_subdir string|?
----@field templates table|?
----@field templates.subdir string
----@field templates.date_format string
----@field templates.time_format string
+---@field templates obsidian.config.TemplateOpts
 ---@field note_id_func function|?
 ---@field follow_url_func function|?
 ---@field note_frontmatter_func function|?
@@ -21,6 +20,8 @@ local config = {}
 ---@field use_advanced_uri boolean|?
 ---@field open_app_foreground boolean|?
 ---@field finder string|?
+---@field sort_by string|?
+---@field sort_reversed boolean|?
 ---@field open_notes_in "current"|"vsplit"|"hsplit"
 config.ClientOpts = {}
 
@@ -31,7 +32,7 @@ config.ClientOpts.default = function()
     dir = vim.fs.normalize "./",
     log_level = nil,
     notes_subdir = nil,
-    templates = nil,
+    templates = config.TemplateOpts.default(),
     note_id_func = nil,
     follow_url_func = nil,
     note_frontmatter_func = nil,
@@ -43,6 +44,8 @@ config.ClientOpts.default = function()
     use_advanced_uri = nil,
     open_app_foreground = false,
     finder = nil,
+    sort_by = "modified",
+    sort_reversed = true,
     open_notes_in = "current",
   }
 end
@@ -52,12 +55,20 @@ end
 ---@param opts table<string, any>
 ---@return obsidian.config.ClientOpts
 config.ClientOpts.normalize = function(opts)
+  ---@type obsidian.config.ClientOpts
   opts = vim.tbl_extend("force", config.ClientOpts.default(), opts)
   opts.backlinks = vim.tbl_extend("force", config.BacklinksOpts.default(), opts.backlinks)
   opts.completion = vim.tbl_extend("force", config.CompletionOpts.default(), opts.completion)
   opts.mappings = opts.mappings and opts.mappings or config.MappingOpts.default()
   opts.daily_notes = vim.tbl_extend("force", config.DailyNotesOpts.default(), opts.daily_notes)
+  opts.templates = vim.tbl_extend("force", config.TemplateOpts.default(), opts.templates)
   opts.dir = vim.fs.normalize(tostring(opts.dir))
+
+  -- Validate.
+  if opts.sort_by ~= nil and not vim.tbl_contains({ "path", "modified", "accessed", "created" }, opts.sort_by) then
+    echo.err("invalid 'sort_by' option '" .. opts.sort_by .. "'")
+  end
+
   return opts
 end
 
@@ -108,6 +119,8 @@ end
 ---@class obsidian.config.DailyNotesOpts
 ---@field folder string|?
 ---@field date_format string|?
+---@field alias_format string|?
+---@field template string|?
 config.DailyNotesOpts = {}
 
 ---Get defaults.
@@ -116,6 +129,25 @@ config.DailyNotesOpts.default = function()
   return {
     folder = nil,
     date_format = nil,
+    alias_format = nil,
+  }
+end
+
+---@class obsidian.config.TemplateOpts
+---@field subdir string
+---@field date_format string|?
+---@field time_format string|?
+---@field substitutions table|?
+config.TemplateOpts = {}
+
+---Get defaults.
+---@return obsidian.config.TemplateOpts
+config.TemplateOpts.default = function()
+  return {
+    subdir = nil,
+    date_format = nil,
+    time_format = nil,
+    substitutions = {},
   }
 end
 
